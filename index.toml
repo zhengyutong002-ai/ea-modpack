@@ -1,13 +1,8 @@
 hash-format = "sha256"
 
 [[files]]
-file = "mods/e4mc.pw.toml"
-hash = "c64bffb51596c65dbea0a7f12a6bd55ea55ef015dcc27779a87f7092714fe9a9"
-metafile = true
-
-[[files]]
-file = "mods/ea-1.0.1.jar"
-hash = "fc1ff3d8444522233927a2109b530a09f76e96378b38d1a6045ad8a6af495bc6"
+file = "mods/ea-1.0.2.jar"
+hash = "3f024c851c2e2781ff0cc5f5147cc2314bd170da4e594ce1d9fb064c0a4fcfae"
 
 [[files]]
 file = "mods/veil.pw.toml"
