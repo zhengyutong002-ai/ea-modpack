@@ -6,8 +6,8 @@ hash = "c64bffb51596c65dbea0a7f12a6bd55ea55ef015dcc27779a87f7092714fe9a9"
 metafile = true
 
 [[files]]
-file = "mods/ea-1.0.0.jar"
-hash = "17d713d243fb039cab294701133b3be2e176ccecd3c374b7eaf57f37225510e6"
+file = "mods/ea-1.0.1.jar"
+hash = "fc1ff3d8444522233927a2109b530a09f76e96378b38d1a6045ad8a6af495bc6"
 
 [[files]]
 file = "mods/veil.pw.toml"
