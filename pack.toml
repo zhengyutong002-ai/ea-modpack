@@ -1,0 +1,13 @@
+name = "Ea-RisingLegends2"
+author = "zheng"
+version = "1.0.0"
+pack-format = "packwiz:1.1.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = "005941b7ddba0bf8b36152ea4bf7e9614ab6a27a221e87cbb7dd47f68a3aa5c4"
+
+[versions]
+minecraft = "1.21.1"
+neoforge = "21.1.249"
