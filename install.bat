@@ -35,17 +35,38 @@ function Step($n, $text) {
 }
 function Footer { Write-Host ''; Write-Host '                                        Made with Claude' -ForegroundColor DarkGray }
 function Save($path, $text) { [IO.File]::WriteAllText($path, $text, (New-Object Text.UTF8Encoding $false)) }
-function Get-File($url, $path) {
-    $wc = New-Object Net.WebClient
-    $wc.Headers.Add('User-Agent', $UA)
-    try { $wc.DownloadFile($url, $path) } finally { $wc.Dispose() }
+# ファイル名に [ ] ' ( ) や空白があるので、パスはすべて .NET / -LiteralPath で扱う（ワイルドカード扱いを避ける）
+function Make-Dir($path) { [void][IO.Directory]::CreateDirectory($path) }
+function Exists($path) { [IO.File]::Exists($path) }
+function Sha1($path) { (Get-FileHash -LiteralPath $path -Algorithm SHA1).Hash.ToLower() }
+# 一時ファイルにダウンロードしてから改名。失敗したら 3 回までやり直す
+function Get-File($url, $path, $sha1 = $null) {
+    Make-Dir ([IO.Path]::GetDirectoryName($path))
+    $part = "$path.part"
+    $last = $null
+    foreach ($try in 1..3) {
+        try {
+            if (Exists $part) { [IO.File]::Delete($part) }
+            $wc = New-Object Net.WebClient
+            $wc.Headers.Add('User-Agent', $UA)
+            try { $wc.DownloadFile([Uri]$url, $part) } finally { $wc.Dispose() }
+            if ($sha1 -and (Sha1 $part) -ne $sha1) { throw 'ファイルが壊れています（ハッシュ不一致）' }
+            if (Exists $path) { [IO.File]::Delete($path) }
+            [IO.File]::Move($part, $path)
+            return
+        } catch {
+            $last = $_.Exception.Message
+            Start-Sleep -Seconds (2 * $try)
+        }
+    }
+    if (Exists $part) { [IO.File]::Delete($part) }
+    throw "$([IO.Path]::GetFileName($path)) をダウンロードできませんでした（3 回失敗：$last）"
 }
-function Sha1($path) { (Get-FileHash $path -Algorithm SHA1).Hash.ToLower() }
 function Find-Prism {
     foreach ($p in @("$env:LOCALAPPDATA\Programs\PrismLauncher\prismlauncher.exe",
                      "$env:ProgramFiles\PrismLauncher\prismlauncher.exe",
                      "${env:ProgramFiles(x86)}\PrismLauncher\prismlauncher.exe")) {
-        if ($p -and (Test-Path $p)) { return $p }
+        if ($p -and (Exists $p)) { return $p }
     }
     return $null
 }
@@ -64,7 +85,7 @@ try {
         Say 'Prism Launcher が開いています。閉じてから Enter キーを押してください。' 'Yellow'
         [void](Read-Host)
     }
-    New-Item -ItemType Directory -Force $Tmp | Out-Null
+    Make-Dir $Tmp
 
     # 1. Prism Launcher
     Step 1 'Prism Launcher を準備中…'
@@ -94,46 +115,41 @@ try {
     $pf = $ver.files | Where-Object { $_.primary } | Select-Object -First 1
     if (-not $pf) { $pf = $ver.files[0] }
     $zip = Join-Path $Tmp 'rl2.zip'
-    Get-File $pf.url $zip
-    if ((Sha1 $zip) -ne $pf.hashes.sha1) { throw 'ダウンロードしたファイルが壊れています。もう一度実行してください。' }
+    Get-File $pf.url $zip $pf.hashes.sha1
     $pack = Join-Path $Tmp 'rl2'
-    if (Test-Path $pack) { Remove-Item $pack -Recurse -Force }
-    Expand-Archive $zip $pack -Force
+    if ([IO.Directory]::Exists($pack)) { [IO.Directory]::Delete($pack, $true) }
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [IO.Compression.ZipFile]::ExtractToDirectory($zip, $pack)
     $index = [IO.File]::ReadAllText((Join-Path $pack 'modrinth.index.json'), [Text.Encoding]::UTF8) | ConvertFrom-Json
     Say "$($index.name) を取得しました。"
 
     # 3. モッド（Modrinth から直接ダウンロード）
     $files = @($index.files | Where-Object { -not $_.env -or $_.env.client -ne 'unsupported' })
     Step 3 "モッドをダウンロード中…（全 $($files.Count) 個）"
-    New-Item -ItemType Directory -Force $MC | Out-Null
+    Make-Dir $MC
     $i = 0
     foreach ($f in $files) {
         $i++
         Write-Host -NoNewline "`r   $i / $($files.Count)   "
         if ($f.path -match '\.\.' -or [IO.Path]::IsPathRooted($f.path)) { continue }
-        $dest = Join-Path $MC $f.path
-        if ((Test-Path $dest) -and (Sha1 $dest) -eq $f.hashes.sha1) { continue }
-        New-Item -ItemType Directory -Force (Split-Path $dest) | Out-Null
-        $ok = $false
-        foreach ($try in 1..3) {
-            try { Get-File $f.downloads[0] $dest; if ((Sha1 $dest) -eq $f.hashes.sha1) { $ok = $true; break } } catch { Start-Sleep 2 }
-        }
-        if (-not $ok) { throw "$($f.path) をダウンロードできませんでした。" }
+        $dest = [IO.Path]::Combine($MC, $f.path.Replace('/', '\'))
+        if ((Exists $dest) -and (Sha1 $dest) -eq $f.hashes.sha1) { continue }
+        Get-File $f.downloads[0] $dest $f.hashes.sha1   # index の URL はエンコード済み（%5B など）
     }
     Write-Host ''
     foreach ($dir in 'overrides', 'client-overrides') {
         $src = Join-Path $pack $dir
-        if (-not (Test-Path $src)) { continue }
-        Get-ChildItem $src -Recurse -File | ForEach-Object {
-            $rel = $_.FullName.Substring($src.Length + 1)
-            $dest = Join-Path $MC $rel
-            if ($rel -eq 'options.txt' -and (Test-Path $dest)) { return }   # 2 回目以降はゲーム設定を残す
-            New-Item -ItemType Directory -Force (Split-Path $dest) | Out-Null
-            Copy-Item $_.FullName $dest -Force
+        if (-not [IO.Directory]::Exists($src)) { continue }
+        foreach ($file in [IO.Directory]::GetFiles($src, '*', 'AllDirectories')) {
+            $rel = $file.Substring($src.Length + 1)
+            $dest = [IO.Path]::Combine($MC, $rel)
+            if ($rel -eq 'options.txt' -and (Exists $dest)) { continue }   # 2 回目以降はゲーム設定を残す
+            Make-Dir ([IO.Path]::GetDirectoryName($dest))
+            [IO.File]::Copy($file, $dest, $true)
         }
     }
-    New-Item -ItemType Directory -Force (Join-Path $Inst 'mrpack') | Out-Null
-    Copy-Item (Join-Path $pack 'modrinth.index.json') (Join-Path $Inst 'mrpack') -Force
+    Make-Dir (Join-Path $Inst 'mrpack')
+    [IO.File]::Copy((Join-Path $pack 'modrinth.index.json'), (Join-Path $Inst 'mrpack\modrinth.index.json'), $true)
     Say '完了しました。'
 
     # 4. 乖離剣エアの自動アップデートとメモリ
@@ -173,7 +189,7 @@ MaxMemAlloc=$MemoryMB
 
     # 5. 後片付け
     Step 5 '後片付け中…'
-    Remove-Item $Tmp -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $Tmp -Recurse -Force -ErrorAction SilentlyContinue
     Say 'OK'
 
     Write-Host ''
