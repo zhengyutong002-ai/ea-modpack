@@ -14,7 +14,7 @@
 4. 右键实例 → "编辑" → "设置" → "自定义命令"，勾上，在 **启动前命令** 里粘贴下面这一整行：
 
    ```
-   "$INST_JAVA" -jar packwiz-installer-bootstrap.jar https://raw.githubusercontent.com/GITHUB_USER/ea-modpack/main/pack.toml
+   "$INST_JAVA" -jar packwiz-installer-bootstrap.jar https://raw.githubusercontent.com/zhengyutong002-ai/ea-modpack/main/pack.toml
    ```
 5. 同一个"设置"页 → "Java" → 最大内存改成 **8192 MB**（模组很多，内存小会卡或崩）。
 6. 点"启动"。第一次会弹出一个小窗口下载乖离剑，下完自动进游戏。以后每次启动都会自动检查更新。
